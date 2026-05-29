@@ -328,4 +328,4 @@ if __name__ == "__main__":
     time.sleep(0.5)
     bot.set_webhook(url=f"{RENDER_URL}/webhook/{BOT_TOKEN}")
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False) 
+    app.run(host="0.0.0.0", port=port, debug=False)
