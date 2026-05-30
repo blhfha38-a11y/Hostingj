@@ -1,20 +1,28 @@
 import os
 import logging
 import sys
+import threading
+from flask import Flask, request
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from telebot.handler_backends import State, StatesGroup
 from telebot.storage import StateMemoryStorage
 
-# Логирование - убрал DEBUG, оставил только INFO
+# Flask для Render
+app = Flask(__name__)
+
+# Логирование
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     stream=sys.stdout
 )
 
-BT = os.getenv("BOT_TOKEN", "8216648190:AAGTFQwJIwUCy7aRvVUqXmU-gllHFGAvjR0")
+BT = os.getenv("BOT_TOKEN", "8654418214:AAEoExJis5sUNgLgNWjASFTe11sxTJp7Ld0")
 AID = 6927128515
+
+# На Render нужно использовать PORT из переменных окружения
+PORT = int(os.getenv("PORT", 10000))
 
 state_storage = StateMemoryStorage()
 bot = TeleBot(BT, state_storage=state_storage)
@@ -41,7 +49,8 @@ def mm():
     return InlineKeyboardMarkup(row_width=1).add(
         InlineKeyboardButton("🛒 ЗАКАЗАТЬ", callback_data="o"),
         InlineKeyboardButton("⭐ ОТЗЫВЫ", callback_data="r"),
-        InlineKeyboardButton("🆘 ПОДДЕРЖКА", callback_data="s")
+        InlineKeyboardButton("🆘 ПОДДЕРЖКА", callback_data="s"),
+        InlineKeyboardButton("📜 ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ", url="https://t.me/gggvppppq")
     )
 
 def ck():
@@ -73,13 +82,13 @@ def cm():
 @bot.message_handler(commands=['start'])
 def st(msg: Message):
     bot.send_message(msg.chat.id,
-        "NEBULA MARKET — это лучший шоп, мы обеспечиваем безопасность, контроль и анонимность своим клиентам, пошаговую инструкцию в получении товара, гарантию качества и комфорта, круглосуточный бот для ваших обращений по разным вопросам. Работаем в 6 городах России.\n\nОТКАЗ ОТ ОТВЕТСТВЕННОСТИ / DISCLAIMERДанный чат-бот является исключительно развлекательным интерактивным текстовым симулятором (игрой).Игровой процесс: Все упоминания внутриигровых предметов, товаров, валюты, организаций и действий являются абсолютным художественным вымыслом авторов.Реальный мир: Бот не осуществляет, не рекламирует и не координирует продажу, доставку или распространение каких-либо реальных товаров, услуг или запрещенных веществ. Физическая доставка невозможна.Возрастное ограничение: 18+. Игровой процесс не содержит призывов к совершению противоправных действий.Используя бот, вы соглашаетесь с тем, что весь контент носит юмористический и игровой характер.\nВыберите действие:",
+        "🌟 NEBULA MARKET\n\nВыберите действие:",
         reply_markup=mm())
 
 @bot.callback_query_handler(func=lambda call: call.data == "m")
 def bm(cb: CallbackQuery):
     bot.delete_state(cb.from_user.id, cb.message.chat.id)
-    bot.edit_message_text("🌟 NEBULA MARKET\nВыберите действие:", cb.message.chat.id, cb.message.message_id, reply_markup=mm())
+    bot.edit_message_text("🌟 NEBULA MARKET\n\nВыберите действие:", cb.message.chat.id, cb.message.message_id, reply_markup=mm())
     bot.answer_callback_query(cb.id)
 
 @bot.callback_query_handler(func=lambda call: call.data == "r")
@@ -150,6 +159,21 @@ def hps(msg: Message):
 def wps(msg: Message):
     bot.send_message(msg.chat.id, "Пожалуйста, отправьте фото.", reply_markup=cm())
 
+# Webhook для Render
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return ''
+    return '!'
+
+# Health check для Render
+@app.route('/')
+def index():
+    return 'Bot is running!'
+
 if __name__ == "__main__":
     print("=" * 40)
     print("ЗАПУСК БОТА")
@@ -163,7 +187,16 @@ if __name__ == "__main__":
         print(f"   ID: {me.id}")
         print(f"   Ссылка: https://t.me/{me.username}")
         print("=" * 40)
-        print("Бот запущен! Ожидание сообщений...")
-        bot.infinity_polling()
+        
+        # Удаляем старый вебхук и запускаем поллинг в отдельном потоке
+        bot.remove_webhook()
+        
+        # Запускаем поллинг в фоне
+        threading.Thread(target=bot.infinity_polling, daemon=True).start()
+        
+        # Запускаем Flask
+        print(f"Сервер запущен на порту {PORT}")
+        app.run(host='0.0.0.0', port=PORT)
+        
     except Exception as e:
-        print(f"❌ Ошибка подключения: {e}")
+        print(f"❌ Ошибка: {e}")
