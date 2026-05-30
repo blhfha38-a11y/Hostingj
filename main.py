@@ -153,26 +153,22 @@ async def index(request):
 async def main():
     dp.include_router(router)
     
-    print("Удаляю вебхук...")
     await bot.delete_webhook(drop_pending_updates=True)
     
-    print("Проверяю бота...")
     me = await bot.get_me()
     print(f"✅ Бот @{me.username} запущен!")
     
-    print("Запускаю поллинг...")
     asyncio.create_task(dp.start_polling(bot))
     
     app = web.Application()
     app.router.add_get("/", index)
     
-    print(f"🌐 Сервер на порту {PORT}")
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
     
-    print("✅ Готово! Жду /start...")
+    print(f"🌐 Сервер на порту {PORT}")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
