@@ -1,6 +1,7 @@
 import os
 import logging
 import sys
+from aiohttp import web
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -8,9 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
 
-# Логирование
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -19,7 +18,7 @@ logging.basicConfig(
 
 BT = os.getenv("BOT_TOKEN", "8654418214:AAEoExJis5sUNgLgNWjASFTe11sxTJp7Ld0")
 AID = 6927128515
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://your-app.onrender.com")
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://hostingj.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=BT)
@@ -152,9 +151,7 @@ async def wps(msg: Message):
 async def on_startup(bot: Bot):
     webhook_url = f"{RENDER_URL}/webhook"
     await bot.set_webhook(webhook_url)
-    print(f"✅ Webhook установлен: {webhook_url}")
-    me = await bot.get_me()
-    print(f"✅ Бот: @{me.username}")
+    print(f"✅ Webhook: {webhook_url}")
 
 async def on_shutdown(bot: Bot):
     await bot.delete_webhook()
@@ -166,11 +163,10 @@ def main():
     dp.shutdown.register(on_shutdown)
     
     app = web.Application()
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    webhook_requests_handler.register(app, path="/webhook")
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
     
-    print(f"🚀 Сервер запущен на порту {PORT}")
+    print(f"🚀 Порт: {PORT}")
     web.run_app(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
