@@ -148,6 +148,10 @@ async def hps(msg: Message, state: FSMContext):
 async def wps(msg: Message):
     await msg.answer("Пожалуйста, отправьте фото.", reply_markup=cm())
 
+# Главная страница
+async def index(request):
+    return web.Response(text="Bot is running!")
+
 async def on_startup(bot: Bot):
     webhook_url = f"{RENDER_URL}/webhook"
     await bot.set_webhook(webhook_url)
@@ -163,6 +167,11 @@ def main():
     dp.shutdown.register(on_shutdown)
     
     app = web.Application()
+    
+    # Главная страница
+    app.router.add_get("/", index)
+    
+    # Webhook
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
     
@@ -170,4 +179,4 @@ def main():
     web.run_app(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
-    main()
+    main() 
