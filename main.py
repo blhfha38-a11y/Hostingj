@@ -1,16 +1,12 @@
 import os
 import sys
-import asyncio
 import logging
-from aiohttp import web
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+import threading
+from flask import Flask
+from telebot import TeleBot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
+from telebot.handler_backends import State, StatesGroup
+from telebot.storage import StateMemoryStorage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,12 +18,9 @@ BT = os.getenv("BOT_TOKEN", "8216648190:AAGTFQwJIwUCy7aRvVUqXmU-gllHFGAvjR0")
 AID = 6927128515
 PORT = int(os.getenv("PORT", 10000))
 
-bot = Bot(
-    token=BT,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
-dp = Dispatcher(storage=MemoryStorage())
-router = Router()
+app = Flask(__name__)
+state_storage = StateMemoryStorage()
+bot = TeleBot(BT, state_storage=state_storage)
 
 class Os(StatesGroup):
     c = State()
@@ -36,7 +29,6 @@ class Os(StatesGroup):
 
 cts = ["Москва", "Санкт-Петербург", "Екатеринбург", "Казань", "Новосибирск", "Краснодар"]
 
-# Разбиваем названия чтобы Telegram не блочил
 prd = {
     "Москва": {
         "Ам" + "фет" + "амин": "1г – 1500₽",
@@ -81,132 +73,132 @@ rvw = "Отзывы: @ghpityuogg"
 sup = "bog_gmail"
 
 def mm():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 ЗАКАЗАТЬ", callback_data="o")],
-        [InlineKeyboardButton(text="⭐ ОТЗЫВЫ", callback_data="r")],
-        [InlineKeyboardButton(text="🆘 ПОДДЕРЖКА", callback_data="s")],
-        [InlineKeyboardButton(text="📜 ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ", url="https://t.me/gggvppppq")]
-    ])
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("🛒 ЗАКАЗАТЬ", callback_data="o"))
+    kb.add(InlineKeyboardButton("⭐ ОТЗЫВЫ", callback_data="r"))
+    kb.add(InlineKeyboardButton("🆘 ПОДДЕРЖКА", callback_data="s"))
+    kb.add(InlineKeyboardButton("📜 ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ", url="https://t.me/gggvppppq"))
+    return kb
 
 def ck():
-    kb = []
+    kb = InlineKeyboardMarkup(row_width=1)
     for c in cts:
-        kb.append([InlineKeyboardButton(text=c, callback_data=f"c_{c}")])
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="m")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+        kb.add(InlineKeyboardButton(c, callback_data=f"c_{c}"))
+    kb.add(InlineKeyboardButton("🔙 Назад", callback_data="m"))
+    return kb
 
 def pk(city):
-    kb = []
+    kb = InlineKeyboardMarkup(row_width=1)
     for prod, price in prd.get(city, {}).items():
-        kb.append([InlineKeyboardButton(text=f"{prod} - {price}", callback_data=f"p_{city}_{prod}")])
-    kb.append([InlineKeyboardButton(text="🔙 Выбрать город", callback_data="o")])
-    kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="m")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+        kb.add(InlineKeyboardButton(f"{prod} - {price}", callback_data=f"p_{city}_{prod}"))
+    kb.add(InlineKeyboardButton("🔙 Выбрать город", callback_data="o"))
+    kb.add(InlineKeyboardButton("🏠 Главное меню", callback_data="m"))
+    return kb
 
 def pm():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📸 Отправить скриншот", callback_data="ss")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="m")]
-    ])
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("📸 Отправить скриншот", callback_data="ss"))
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="m"))
+    return kb
 
 def cm():
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="m")]])
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="m"))
+    return kb
 
-@router.message(Command("start"))
-async def st(msg: Message):
-    await msg.answer("🌟 NEBULA MARKET\n\nВыберите действие:", reply_markup=mm())
+@bot.message_handler(commands=['start'])
+def st(msg: Message):
+    bot.send_message(msg.chat.id, "🌟 NEBULA MARKET\n\nВыберите действие:", reply_markup=mm())
 
-@router.callback_query(F.data == "m")
-async def bm(cb: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await cb.message.edit_text("🌟 NEBULA MARKET\n\nВыберите действие:", reply_markup=mm())
-    await cb.answer()
+@bot.callback_query_handler(func=lambda call: call.data == "m")
+def bm(cb: CallbackQuery):
+    bot.delete_state(cb.from_user.id, cb.message.chat.id)
+    bot.edit_message_text("🌟 NEBULA MARKET\n\nВыберите действие:", cb.message.chat.id, cb.message.message_id, reply_markup=mm())
+    bot.answer_callback_query(cb.id)
 
-@router.callback_query(F.data == "r")
-async def sr(cb: CallbackQuery):
-    await cb.message.edit_text(f"⭐ Отзывы:\n{rvw}", reply_markup=cm())
-    await cb.answer()
+@bot.callback_query_handler(func=lambda call: call.data == "r")
+def sr(cb: CallbackQuery):
+    bot.edit_message_text(f"⭐ Отзывы:\n{rvw}", cb.message.chat.id, cb.message.message_id, reply_markup=cm())
+    bot.answer_callback_query(cb.id)
 
-@router.callback_query(F.data == "s")
-async def ss(cb: CallbackQuery):
-    await cb.message.edit_text(f"🆘 Поддержка: @{sup}", reply_markup=cm())
-    await cb.answer()
+@bot.callback_query_handler(func=lambda call: call.data == "s")
+def ss(cb: CallbackQuery):
+    bot.edit_message_text(f"🆘 Поддержка: @{sup}", cb.message.chat.id, cb.message.message_id, reply_markup=cm())
+    bot.answer_callback_query(cb.id)
 
-@router.callback_query(F.data == "o")
-async def osc(cb: CallbackQuery, state: FSMContext):
-    await state.set_state(Os.c)
-    await cb.message.edit_text("🏙 Выберите город:", reply_markup=ck())
-    await cb.answer()
+@bot.callback_query_handler(func=lambda call: call.data == "o")
+def osc(cb: CallbackQuery):
+    bot.set_state(cb.from_user.id, Os.c, cb.message.chat.id)
+    bot.edit_message_text("🏙 Выберите город:", cb.message.chat.id, cb.message.message_id, reply_markup=ck())
+    bot.answer_callback_query(cb.id)
 
-@router.callback_query(Os.c, F.data.startswith("c_"))
-async def occ(cb: CallbackQuery, state: FSMContext):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("c_"), state=Os.c)
+def occ(cb: CallbackQuery):
     city = cb.data.split("_", 1)[1]
-    await state.update_data(ct=city)
-    await state.set_state(Os.p)
-    await cb.message.edit_text(f"🏙 Город: {city}\n\n📦 Товар:", reply_markup=pk(city))
-    await cb.answer()
+    bot.add_data(cb.from_user.id, cb.message.chat.id, ct=city)
+    bot.set_state(cb.from_user.id, Os.p, cb.message.chat.id)
+    bot.edit_message_text(f"🏙 Город: {city}\n\n📦 Товар:", cb.message.chat.id, cb.message.message_id, reply_markup=pk(city))
+    bot.answer_callback_query(cb.id)
 
-@router.callback_query(Os.p, F.data.startswith("p_"))
-async def ocp(cb: CallbackQuery, state: FSMContext):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("p_"), state=Os.p)
+def ocp(cb: CallbackQuery):
     parts = cb.data.split("_")
     city = parts[1]
     prod = "_".join(parts[2:])
-    data = await state.get_data()
-    data["ct"] = city
-    data["pr"] = prod
-    data["pc"] = prd[city][prod]
-    await state.update_data(data)
-    txt = f"✅ Заказ:\n🏙 {city}\n📦 {prod}\n💰 {data['pc']}\n\n{pdt}"
-    await state.set_state(Os.w)
-    await cb.message.edit_text(txt, reply_markup=pm())
-    await cb.answer()
+    
+    with bot.retrieve_data(cb.from_user.id, cb.message.chat.id) as data:
+        data["ct"] = city
+        data["pr"] = prod
+        data["pc"] = prd[city][prod]
+    
+    with bot.retrieve_data(cb.from_user.id, cb.message.chat.id) as data:
+        txt = f"✅ Заказ:\n🏙 {city}\n📦 {prod}\n💰 {data['pc']}\n\n{pdt}"
+    
+    bot.set_state(cb.from_user.id, Os.w, cb.message.chat.id)
+    bot.edit_message_text(txt, cb.message.chat.id, cb.message.message_id, reply_markup=pm())
+    bot.answer_callback_query(cb.id)
 
-@router.callback_query(Os.w, F.data == "ss")
-async def rqs(cb: CallbackQuery, state: FSMContext):
-    await cb.message.edit_text("📸 Отправьте скриншот перевода (только фото).\nДля отмены нажмите кнопку.", reply_markup=cm())
-    await cb.answer()
+@bot.callback_query_handler(func=lambda call: call.data == "ss", state=Os.w)
+def rqs(cb: CallbackQuery):
+    bot.edit_message_text("📸 Отправьте скриншот перевода (только фото).\nДля отмены нажмите кнопку.", cb.message.chat.id, cb.message.message_id, reply_markup=cm())
+    bot.answer_callback_query(cb.id)
 
-@router.message(Os.w, F.photo)
-async def hps(msg: Message, state: FSMContext):
-    data = await state.get_data()
-    city = data.get("ct", "-")
-    prod = data.get("pr", "-")
-    price = data.get("pc", "-")
+@bot.message_handler(content_types=['photo'], state=Os.w)
+def hps(msg: Message):
+    with bot.retrieve_data(msg.from_user.id, msg.chat.id) as data:
+        city = data.get("ct", "-")
+        prod = data.get("pr", "-")
+        price = data.get("pc", "-")
+    
     cap = f"📸 Скриншот\nОт: @{msg.from_user.username or 'no name'} ({msg.from_user.id})\n{msg.from_user.full_name}\nГород: {city}\nТовар: {prod}\nЦена: {price}"
     try:
-        await bot.send_photo(chat_id=AID, photo=msg.photo[-1].file_id, caption=cap)
-        await msg.answer("✅ Скриншот отправлен.", reply_markup=mm())
+        bot.send_photo(AID, msg.photo[-1].file_id, caption=cap)
+        bot.send_message(msg.chat.id, "✅ Скриншот отправлен.", reply_markup=mm())
     except:
-        await msg.answer("⚠️ Ошибка. Свяжитесь с @" + sup, reply_markup=mm())
-    await state.clear()
+        bot.send_message(msg.chat.id, "⚠️ Ошибка. Свяжитесь с @" + sup, reply_markup=mm())
+    
+    bot.delete_state(msg.from_user.id, msg.chat.id)
 
-@router.message(Os.w)
-async def wps(msg: Message):
-    await msg.answer("Пожалуйста, отправьте фото.", reply_markup=cm())
+@bot.message_handler(state=Os.w)
+def wps(msg: Message):
+    bot.send_message(msg.chat.id, "Пожалуйста, отправьте фото.", reply_markup=cm())
 
-async def index(request):
-    return web.Response(text="OK")
-
-async def main():
-    dp.include_router(router)
-    
-    await bot.delete_webhook(drop_pending_updates=True)
-    
-    me = await bot.get_me()
-    print(f"✅ Бот @{me.username} запущен!")
-    
-    asyncio.create_task(dp.start_polling(bot))
-    
-    app = web.Application()
-    app.router.add_get("/", index)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    
-    print(f"🌐 Сервер на порту {PORT}")
-    await asyncio.Event().wait()
+@app.route('/')
+def index():
+    return "OK"
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    print("🚀 Запуск бота...")
+    
+    try:
+        me = bot.get_me()
+        print(f"✅ Бот @{me.username} запущен!")
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
+    
+    # Запускаем поллинг в отдельном потоке
+    threading.Thread(target=bot.infinity_polling, daemon=True).start()
+    
+    # Запускаем Flask для Render
+    print(f"🌐 Сервер на порту {PORT}")
+    app.run(host="0.0.0.0", port=PORT) 
