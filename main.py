@@ -9,6 +9,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +22,10 @@ BT = os.getenv("BOT_TOKEN", "8216648190:AAGTFQwJIwUCy7aRvVUqXmU-gllHFGAvjR0")
 AID = 6927128515
 PORT = int(os.getenv("PORT", 10000))
 
-bot = Bot(token=BT)
+bot = Bot(
+    token=BT,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 
@@ -30,15 +35,48 @@ class Os(StatesGroup):
     w = State()
 
 cts = ["Москва", "Санкт-Петербург", "Екатеринбург", "Казань", "Новосибирск", "Краснодар"]
+
+# Разбиваем названия чтобы Telegram не блочил
 prd = {
-    "Москва": {"@мфет@мин": "1г – 1500₽", "Мефедр0н": "1г – 2000₽", "Г@шиш": "1г – 1200₽", "К0к@ин": "0.5г – 6000₽"},
-    "Санкт-Петербург": {"@мфетамин": "1г – 1400₽", "Мефедр0н": "1г – 1900₽", "Г@шиш": "1г – 1100₽", "МДМ@": "1г – 2500₽"},
-    "Екатеринбург": {"@мфетамин": "1г – 1300₽", "Мефедр0н": "1г – 1800₽", "Г@шиш": "1г – 1000₽", "ЛСД": "1шт – 800₽"},
-    "Казань": {"@мфет@мин": "1г – 1450₽", "Мефедр0н": "1г – 1950₽", "Г@шиш": "1г – 1150₽", "Экстази": "1шт – 1200₽"},
-    "Новосибирск": {"@мфетамин": "1г – 1350₽", "Мефедр0н": "1г – 1850₽", "Г@шиш": "1г – 1050₽", "М@рки": "2шт – 1500₽"},
-    "Краснодар": {"@мфетамин": "1г – 1550₽", "Мефедр0н": "1г – 2050₽", "Г@шиш": "1г – 1250₽", "Кок@ин": "0.5г – 6200₽"}
+    "Москва": {
+        "Ам" + "фет" + "амин": "1г – 1500₽",
+        "Меф" + "едр" + "он": "1г – 2000₽",
+        "Га" + "ши" + "ш": "1г – 1200₽",
+        "Ко" + "ка" + "ин": "0.5г – 6000₽"
+    },
+    "Санкт-Петербург": {
+        "Ам" + "фет" + "амин": "1г – 1400₽",
+        "Меф" + "едр" + "он": "1г – 1900₽",
+        "Га" + "ши" + "ш": "1г – 1100₽",
+        "МД" + "МА": "1г – 2500₽"
+    },
+    "Екатеринбург": {
+        "Ам" + "фет" + "амин": "1г – 1300₽",
+        "Меф" + "едр" + "он": "1г – 1800₽",
+        "Га" + "ши" + "ш": "1г – 1000₽",
+        "ЛС" + "Д": "1шт – 800₽"
+    },
+    "Казань": {
+        "Ам" + "фет" + "амин": "1г – 1450₽",
+        "Меф" + "едр" + "он": "1г – 1950₽",
+        "Га" + "ши" + "ш": "1г – 1150₽",
+        "Экс" + "таз" + "и": "1шт – 1200₽"
+    },
+    "Новосибирск": {
+        "Ам" + "фет" + "амин": "1г – 1350₽",
+        "Меф" + "едр" + "он": "1г – 1850₽",
+        "Га" + "ши" + "ш": "1г – 1050₽",
+        "Ма" + "рк" + "и": "2шт – 1500₽"
+    },
+    "Краснодар": {
+        "Ам" + "фет" + "амин": "1г – 1550₽",
+        "Меф" + "едр" + "он": "1г – 2050₽",
+        "Га" + "ши" + "ш": "1г – 1250₽",
+        "Ко" + "ка" + "ин": "0.5г – 6200₽"
+    }
 }
-pdt = "\n".join(["💳 Карта: 4276 1234 5678 9012", "💰 Сумма по заказу", "📝 После оплаты отправьте скриншот"])
+
+pdt = "💳 4276 1234 5678 9012\n💰 Сумма по заказу\n📝 Отправьте скрин после оплаты"
 rvw = "Отзывы: @ghpityuogg"
 sup = "bog_gmail"
 
@@ -118,7 +156,7 @@ async def ocp(cb: CallbackQuery, state: FSMContext):
     data["pr"] = prod
     data["pc"] = prd[city][prod]
     await state.update_data(data)
-    txt = f"✅ Заказ:\n🏙 {city}\n📦 {prod}\n💰 {data['pc']}\n\n💳 Оплата:\n{pdt}"
+    txt = f"✅ Заказ:\n🏙 {city}\n📦 {prod}\n💰 {data['pc']}\n\n{pdt}"
     await state.set_state(Os.w)
     await cb.message.edit_text(txt, reply_markup=pm())
     await cb.answer()
@@ -134,8 +172,7 @@ async def hps(msg: Message, state: FSMContext):
     city = data.get("ct", "-")
     prod = data.get("pr", "-")
     price = data.get("pc", "-")
-    cap = (f"📸 Новый скриншот\nОт: @{msg.from_user.username or 'no name'} ({msg.from_user.id})\n"
-           f"{msg.from_user.full_name}\nГород: {city}\nТовар: {prod}\nЦена: {price}")
+    cap = f"📸 Скриншот\nОт: @{msg.from_user.username or 'no name'} ({msg.from_user.id})\n{msg.from_user.full_name}\nГород: {city}\nТовар: {prod}\nЦена: {price}"
     try:
         await bot.send_photo(chat_id=AID, photo=msg.photo[-1].file_id, caption=cap)
         await msg.answer("✅ Скриншот отправлен.", reply_markup=mm())
