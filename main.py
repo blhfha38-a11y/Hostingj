@@ -1,6 +1,8 @@
 import os
 import logging
 import sys
+import asyncio
+from threading import Thread
 from aiohttp import web
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,7 +10,6 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +19,6 @@ logging.basicConfig(
 
 BT = os.getenv("BOT_TOKEN", "8654418214:AAEoExJis5sUNgLgNWjASFTe11sxTJp7Ld0")
 AID = 6927128515
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://hostingj.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=BT)
@@ -152,28 +152,22 @@ async def wps(msg: Message):
 async def index(request):
     return web.Response(text="Bot is running!")
 
-async def on_startup(bot: Bot):
-    webhook_url = f"{RENDER_URL}/webhook"
-    await bot.set_webhook(webhook_url)
-    print(f"✅ Webhook: {webhook_url}")
+async def start_polling():
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
-async def on_shutdown(bot: Bot):
-    await bot.delete_webhook()
-    print("❌ Webhook удален")
+def run_polling():
+    asyncio.run(start_polling())
 
 def main():
     dp.include_router(router)
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
     
+    # Запускаем поллинг в отдельном потоке
+    Thread(target=run_polling, daemon=True).start()
+    
+    # Запускаем веб-сервер
     app = web.Application()
-    
-    # Главная страница
     app.router.add_get("/", index)
-    
-    # Webhook
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
-    setup_application(app, dp, bot=bot)
     
     print(f"🚀 Порт: {PORT}")
     web.run_app(app, host="0.0.0.0", port=PORT)
